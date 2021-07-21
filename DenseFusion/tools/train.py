@@ -32,18 +32,20 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', type=str, default = 'ycb', help='ycb or warehouse or linemod')
 parser.add_argument('--dataset_root', type=str, default = '', help='dataset root dir (''YCB_Video_Dataset'' or ''Warehouse_Dataset'' or ''Linemod_preprocessed'')')
 parser.add_argument('--batch_size', type=int, default = 8, help='batch size')
-parser.add_argument('--workers', type=int, default = 10, help='number of data loading workers')
-parser.add_argument('--lr', default=0.0001, help='learning rate')
+
+
+parser.add_argument('--workers', type=int, default = 10, help='number of data loading workers') #加载数据线程数目
+parser.add_argument('--lr', default=0.0001, help='learning rate')                               #初始学习率
 parser.add_argument('--lr_rate', default=0.3, help='learning rate decay rate')
-parser.add_argument('--w', default=0.015, help='learning rate')
-parser.add_argument('--w_rate', default=0.3, help='learning rate decay rate')
-parser.add_argument('--decay_margin', default=0.016, help='margin to decay lr & w')
-parser.add_argument('--refine_margin', default=0.013, help='margin to start the training of iterative refinement')
-parser.add_argument('--noise_trans', default=0.03, help='range of the random noise of translation added to the training data')
+parser.add_argument('--w', default=0.015, help='learning rate')                                 #初始权重
+parser.add_argument('--w_rate', default=0.3, help='learning rate decay rate')                   #权重衰减率
+parser.add_argument('--decay_margin', default=0.016, help='margin to decay lr & w')             # 
+parser.add_argument('--refine_margin', default=0.013, help='margin to start the training of iterative refinement')  #Loss到了这个值后，会进行refine训练
+parser.add_argument('--noise_trans', default=0.03, help='range of the random noise of translation added to the training data') #给训练数据加噪声，数据增强
 parser.add_argument('--iteration', type=int, default = 2, help='number of refinement iterations')
 parser.add_argument('--nepoch', type=int, default=500, help='max number of epochs to train')
-parser.add_argument('--resume_posenet', type=str, default = '',  help='resume PoseNet model')
-parser.add_argument('--resume_refinenet', type=str, default = '',  help='resume PoseRefineNet model')
+parser.add_argument('--resume_posenet', type=str, default = '',  help='resume PoseNet model')   #是否继续训练poseNet模型
+parser.add_argument('--resume_refinenet', type=str, default = '',  help='resume PoseRefineNet model') #是否继续训练refine模型
 parser.add_argument('--start_epoch', type=int, default = 1, help='which epoch to start')
 opt = parser.parse_args()
 
@@ -75,11 +77,14 @@ def main():
         print('Unknown dataset')
         return
 
+    # 模型搭建
     estimator = PoseNet(num_points = opt.num_points, num_obj = opt.num_objects)
     estimator.cuda()
+    # 对初步预测的姿态进行提炼
     refiner = PoseRefineNet(num_points = opt.num_points, num_obj = opt.num_objects)
     refiner.cuda()
 
+    # 对poseNet网络和refineNet进行加载，标记对应的网络是否已经开始训练了
     if opt.resume_posenet != '':
         estimator.load_state_dict(torch.load('{0}/{1}'.format(opt.outf, opt.resume_posenet)))
 
@@ -116,6 +121,7 @@ def main():
 
     print('>>>>>>>>----------Dataset loaded!---------<<<<<<<<\nlength of the training set: {0}\nlength of the testing set: {1}\nnumber of sample points on mesh: {2}\nsymmetry object list: {3}'.format(len(dataset), len(test_dataset), opt.num_points_mesh, opt.sym_list))
 
+    # Loss计算
     criterion = Loss(opt.num_points_mesh, opt.sym_list)
     criterion_refine = Loss_refine(opt.num_points_mesh, opt.sym_list)
 
@@ -138,6 +144,7 @@ def main():
             estimator.train()
         optimizer.zero_grad()
 
+        # 每次epoch 重复训练的次数
         for rep in range(opt.repeat_epoch):
             for i, data in enumerate(dataloader, 0):
                 points, choose, img, target, model_points, idx = data
